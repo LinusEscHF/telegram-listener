@@ -238,4 +238,5 @@ def run_telegram_client():
     client.run_until_disconnected()
 
 if __name__ == "__main__":
+    logging.info("Booting telegram-listener container…")
     run_telegram_client()
