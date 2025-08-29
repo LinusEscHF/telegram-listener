@@ -1,3 +1,4 @@
+import logging
 import re
 import requests
 import pandas as pd
@@ -11,61 +12,73 @@ def parse_trade_message(message):
     # Full text of the message
     text = message.strip()
 
-    # --- symbol (e.g. "CRV/USDT", "CRV USDT")
-    m_sym = re.search(r'([A-Za-z0-9\-_]+)\s*/?\s*USDT', text, re.IGNORECASE)
+    # --- symbol (e.g. "#CRV/USDT", "CRV USDT")
+    m_sym = re.search(r'#?([A-Za-z0-9\-_]+)\s*/?\s*USDT', text, re.IGNORECASE)
     symbol = m_sym.group(1).lower() if m_sym else None
 
     # --- direction (long / short)
     m_dir = re.search(r'\b(long|short)\b', text, re.IGNORECASE)
     direction = m_dir.group(1).lower() if m_dir else None
 
-    # --- BUY ZONE (two values: left and right)
-    num = r'[0-9]+(?:[.,][0-9]+)?'  # number with dot or comma
-    m_buy = re.search(rf'\bBUY\s*ZONE\b\s*[:\-–—]?\s*({num})\s*[-–—]\s*({num})', text, re.IGNORECASE)
-    open_range = None
-    if m_buy:
-        left = float(m_buy.group(1).replace(',', '.'))
-        right = float(m_buy.group(2).replace(',', '.'))
-        open_range = (left, right)
+    # --- Split message into segments based on keywords ---
+    keywords = ['Exchanges', 'Leverage', 'BUY ZONE', 'SELL', 'STOP-LOSS']
+    pattern = r'\b(' + '|'.join(keywords) + r')\b\s*[:\-–—]?\s*'
+    parts = re.split(pattern, text, flags=re.IGNORECASE)
+    
+    segments = {}
+    if len(parts) > 1:
+        it = iter(parts[1:])
+        for key in it:
+            normalized_key = key.lower().replace(' ', '_').replace('-', '_')
+            segments[normalized_key] = next(it, '').strip()
 
-    # --- SELL / Take Profit (list of values at the end of the line)
-    m_sell_line = re.search(r'\bSELL\b\s*[:\-–—]?\s*([^\n\r]+)', text, re.IGNORECASE)
+    # --- Initialize variables ---
+    open_range = None
     take_profit = []
-    if m_sell_line:
-        nums = re.findall(num, m_sell_line.group(1))
+    stop_loss = None
+    leverage = None
+    num = r'[0-9]+(?:[.,][0-9]+)?'
+
+    # --- Parse BUY ZONE ---
+    if 'buy_zone' in segments:
+        seg = segments['buy_zone']
+        m_buy = re.search(rf'({num})\s*[-–—]\s*({num})', seg, re.IGNORECASE)
+        if m_buy:
+            left = float(m_buy.group(1).replace(',', '.'))
+            right = float(m_buy.group(2).replace(',', '.'))
+            open_range = (left, right)
+
+    # --- Parse SELL / Take Profit ---
+    if 'sell' in segments:
+        seg = segments['sell']
+        nums = re.findall(num, seg)
         take_profit = [float(n.replace(',', '.')) for n in nums]
 
-    # --- Stop Loss
-    m_sl = re.search(rf'\bSTOP[-\s]?LOSS\b\s*[:\-–—]?\s*({num})', text, re.IGNORECASE)
-    stop_loss = float(m_sl.group(1).replace(',', '.')) if m_sl else None
+    # --- Parse Stop Loss ---
+    if 'stop_loss' in segments:
+        seg = segments['stop_loss']
+        m_sl = re.search(rf'({num})', seg, re.IGNORECASE)
+        if m_sl:
+            stop_loss = float(m_sl.group(1).replace(',', '.'))
 
-    # --- Leverage (range if "max" present)
-    leverage = None
-    m_lev_line = re.search(r'Leverage\s*:\s*([^\n\r]+)', text, re.IGNORECASE)
-    if m_lev_line:
-        seg = m_lev_line.group(1)
-
-        # 1) explicit numeric range like "5-20x" or "5 – 20x"
+    # --- Parse Leverage ---
+    if 'leverage' in segments:
+        seg = segments['leverage']
         m_range = re.search(r'(\d+)\s*[xX]?\s*[-–—]\s*(\d+)\s*[xX]?', seg)
         if m_range:
             leverage = (int(m_range.group(1)), int(m_range.group(2)))
         else:
-            # 2) "5x ... max20" (may contain brackets/spaces)
-            m_min = re.search(r'(\d+)\s*[xX]\b|\b(\d+)\b', seg)   # captures "5x" or bare "5"
-            m_max = re.search(r'\bmax\s*([0-9]+)\b', seg, re.IGNORECASE)
+            m_min = re.search(r'(\d+)\s*[xX]', seg)
+            m_max = re.search(r'\bmax\s*(\d+)\b', seg, re.IGNORECASE)
+            min_val = int(m_min.group(1)) if m_min else None
+            max_val = int(m_max.group(1)) if m_max else None
 
-            min_val = None
-            if m_min:
-                # group(1) if "5x", else group(2) for bare "5"
-                min_val = int(m_min.group(1) or m_min.group(2))
-
-            if m_max:
-                max_val = int(m_max.group(1))
-                leverage = (min_val if min_val is not None else max_val, max_val)
+            if min_val is not None and max_val is not None:
+                leverage = (min_val, max_val)
+            elif max_val is not None:
+                leverage = (max_val, max_val)
             elif min_val is not None:
-                # only single value present -> return a single int
                 leverage = min_val
-
 
     # --- return the parsed data as a dict
     return {
@@ -305,7 +318,9 @@ def signal_data(message: str):
         statistics.median(message_data['take_profit']),
         message_data['take_profit'][-1]
     ]
-    c.WEIGHT_TP = [0.2, 0.6, 0.2]
+
+    logging.info("Processed message data: %s", message_data)
+
     sgn = 1 if message_data['direction'].lower() == 'long' else -1
     deltas = [(tp - entry_wgt) * sgn for tp in take_profit]
     profit_tp = [d * coins * w for d, w in zip(deltas, c.WEIGHT_TP)]

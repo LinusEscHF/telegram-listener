@@ -11,7 +11,6 @@ import utils as u
 API_ID           = int(c.API_ID)
 API_HASH         = c.API_HASH
 TELEGRAM_SESSION_STRING = c.TELEGRAM_SESSION_STRING
-TELEGRAM_SESSION_NAME = c.TELEGRAM_SESSION_NAME
 TARGET_CHAT_ID   = int(c.TARGET_CHAT_ID)
 SAFE_MODE        = c.SAFE_MODE
 WEBHOOK_URL      = c.WEBHOOK_URL
@@ -31,8 +30,9 @@ def _build_client() -> TelegramClient:
     if TELEGRAM_SESSION_STRING:
         logging.info("Starting TelegramClient with StringSession")
         return TelegramClient(StringSession(TELEGRAM_SESSION_STRING), API_ID, API_HASH)
-    logging.info("Starting TelegramClient with file-based session")
-    return TelegramClient(TELEGRAM_SESSION_NAME, API_ID, API_HASH)
+    else:
+        logging.error("TELEGRAM_SESSION_STRING is not configured.")
+        raise ValueError("TELEGRAM_SESSION_STRING is not configured.")
 
 def run_telegram_client():
     client = _build_client()
@@ -52,6 +52,8 @@ def run_telegram_client():
 
             try:
                 signal_data = u.signal_data(event.raw_text)
+                logging.info("Parsed signal data: %s", signal_data)
+                
                 data = {
                     "chat_id": event.chat_id,
                     "chat_name": getattr(chat, "title", None),
@@ -106,8 +108,8 @@ def run_telegram_client():
                 except Exception:
                     logging.exception("Webhook error")
 
-            except Exception as e:
-                logging.warning("Could not process message: %s", e)
+            except Exception:
+                logging.exception("Could not process message")
 
             logging.info("Done processing message.")
 

@@ -8,14 +8,19 @@ def env(name, default=None, required=False, cast=str):
 
 API_ID           = env("TELEGRAM_API_ID",  required=True, cast=int)
 API_HASH         = env("TELEGRAM_API_HASH", required=True)
-TELEGRAM_SESSION_STRING = env("TELEGRAM_SESSION_STRING")  # StringSession recommended
-TELEGRAM_SESSION_NAME = env("TELEGRAM_SESSION_NAME", "tg_session")  # used if no StringSession
+TELEGRAM_SESSION_STRING = env("TELEGRAM_SESSION_STRING")
 TARGET_CHAT_ID   = env("TARGET_CHAT_ID", required=True, cast=int)
 SAFE_MODE        = env("SAFE_MODE", "false").lower() == "true"
 WEBHOOK_URL      = env("WEBHOOK_URL", required=False)
 HTTP_TIMEOUT     = 15
 
-COIN_LIST        = [
+# todo to environment
+MARGIN = 100
+MAX_RISK = 5/100
+MIN_PROFIT = 10/100
+WEIGHT_TP = [0.2, 0.6, 0.2]
+
+COIN_LIST = [
     {"id": "bitcoin", "symbol": "btc"},
     {"id": "ethereum", "symbol": "eth"},
     {"id": "ripple", "symbol": "xrp"},
