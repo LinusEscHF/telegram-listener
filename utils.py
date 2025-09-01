@@ -267,7 +267,11 @@ def signal_data(message: str):
     # SYMBOL AND COIN_ID
     message_data = parse_trade_message(message)
     symbol = message_data['symbol']
-    coin_id = next(x["id"] for x in c.COIN_LIST if x["symbol"] == symbol)
+    try:
+        coin_id = next(x["id"] for x in c.COIN_LIST if x["symbol"] == symbol)
+    except StopIteration:
+        logging.error(f"Coin ID not found for symbol: {symbol}")
+        return None
 
     # SENTIMENT
     sentiment = get_sentiment_votes(coin_id)
