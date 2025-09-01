@@ -51,7 +51,7 @@ def run_telegram_client():
             chat   = await event.get_chat()
 
             try:
-                logging.info(f"New message in {chat.title if hasattr(chat, "title") else chat.id} from {sender.id if sender else 'unknown'}: {event.raw_text}")
+                logging.info(f"New message in {chat.title if hasattr(chat, 'title') else chat.id} from {sender.id if sender else 'unknown'}: {event.raw_text}")
                 signal_data = u.signal_data(event.raw_text)
                 logging.info(f"Parsed signal data: {signal_data}")
 
