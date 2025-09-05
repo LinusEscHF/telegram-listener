@@ -12,9 +12,12 @@ def parse_trade_message(message):
     # Full text of the message
     text = message.strip()
 
-    # --- symbol (e.g. "#CRV/USDT", "CRV USDT")
-    m_sym = re.search(r'#?([A-Za-z0-9\-_]+)\s*/?\s*USDT', text, re.IGNORECASE)
+    # --- symbol (e.g. "#CRV/USDT")
+    m_sym = re.search(r'#([A-Za-z0-9\-_]+)/USDT', text, re.IGNORECASE)
     symbol = m_sym.group(1).lower() if m_sym else None
+
+    if not symbol:
+        return None
 
     # --- direction (long / short)
     m_dir = re.search(r'\b(long|short)\b', text, re.IGNORECASE)

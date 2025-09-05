@@ -1,4 +1,5 @@
 import logging
+import time
 import requests
 import pandas as pd
 from telethon import TelegramClient, events
@@ -8,15 +9,6 @@ from telethon.sessions import StringSession
 import config_runtime as c
 import utils as u
 
-API_ID           = int(c.API_ID)
-API_HASH         = c.API_HASH
-TELEGRAM_SESSION_STRING = c.TELEGRAM_SESSION_STRING
-TARGET_CHAT_ID   = int(c.TARGET_CHAT_ID)
-SAFE_MODE        = c.SAFE_MODE
-WEBHOOK_URL      = c.WEBHOOK_URL
-COIN_LIST        = c.COIN_LIST
-
-HTTP_TIMEOUT     = c.HTTP_TIMEOUT
 UA_HEADERS       = {"User-Agent": "telegram-listener/1.0 (+azure-container-apps)"}
 
 # Logging
@@ -25,11 +17,14 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
 )
 
+# --- Cooldown state ---
+last_message_time = 0
+
 # =====================  TELEGRAM LISTENER  ========================
 def _build_client() -> TelegramClient:
-    if TELEGRAM_SESSION_STRING:
+    if c.TELEGRAM_SESSION_STRING:
         logging.info("Starting TelegramClient with StringSession")
-        return TelegramClient(StringSession(TELEGRAM_SESSION_STRING), API_ID, API_HASH)
+        return TelegramClient(StringSession(c.TELEGRAM_SESSION_STRING), c.API_ID, c.API_HASH)
     else:
         logging.error("TELEGRAM_SESSION_STRING is not configured.")
         raise ValueError("TELEGRAM_SESSION_STRING is not configured.")
@@ -37,13 +32,30 @@ def _build_client() -> TelegramClient:
 def run_telegram_client():
     client = _build_client()
 
-    @client.on(events.NewMessage(incoming=True))
+    @client.on(events.NewMessage(incoming=True, chats=c.TARGET_CHAT_ID))
     async def on_new_message(event: events.NewMessage.Event):
-        try:
-            if event.out or event.chat_id != TARGET_CHAT_ID:
-                return
+        global last_message_time
+        current_time = time.time()
 
-            if SAFE_MODE:
+        if current_time - last_message_time < c.COOLDOWN_SECONDS:
+            remaining = c.COOLDOWN_SECONDS - (current_time - last_message_time)
+            logging.info(f"Cooldown active. Ignoring message for {remaining:.1f} more seconds.")
+            return
+        
+        try:
+            # Update last message time
+            last_message_time = current_time
+
+            logging.info(
+                f"msg.id={event.message.id} "
+                f"grouped_id={getattr(event.message, 'grouped_id', None)} "
+                f"via_bot={getattr(event.message, 'via_bot_id', None)} "
+                f"fwd={bool(event.message.fwd_from)} "
+                f"date={event.date.isoformat()} "
+                f"text={event.raw_text[:120]!r}"
+            )
+
+            if c.SAFE_MODE:
                 event.message._client.send_message = lambda *a, **k: None
                 event.message._client.send_file = lambda *a, **k: None
 
@@ -51,9 +63,13 @@ def run_telegram_client():
             chat   = await event.get_chat()
 
             try:
-                logging.info(f"New message in {chat.title if hasattr(chat, 'title') else chat.id} from {sender.id if sender else 'unknown'}: {event.raw_text}")
+                logging.info(f"New message in {chat.title if hasattr(chat, 'title') else chat.id}  from {sender.id if sender else 'unknown'}: {event.raw_text}")
                 signal_data = u.signal_data(event.raw_text)
                 logging.info(f"Parsed signal data: {signal_data}")
+
+                if not signal_data:
+                    logging.info("No valid signal data found, skipping.")
+                    return
 
                 data = {
                     "chat_id": event.chat_id,
@@ -104,7 +120,7 @@ def run_telegram_client():
                 logging.info("Sending to webhook: %s",
                             {k: data[k] for k in ("symbol", "chat_id", "date")})
                 try:
-                    resp = requests.post(WEBHOOK_URL, json=data, timeout=HTTP_TIMEOUT, headers=UA_HEADERS)
+                    resp = requests.post(c.WEBHOOK_URL, json=data, timeout=c.HTTP_TIMEOUT, headers=UA_HEADERS)
                     resp.raise_for_status()
                 except Exception:
                     logging.exception("Webhook error")

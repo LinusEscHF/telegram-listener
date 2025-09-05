@@ -2,3 +2,4 @@ configure_telethon_session_string.py
 test_session_string.py
 *.session
 playground*.py
+test_parser.py

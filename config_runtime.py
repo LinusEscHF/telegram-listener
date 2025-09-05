@@ -15,10 +15,11 @@ WEBHOOK_URL      = env("WEBHOOK_URL", required=False)
 HTTP_TIMEOUT     = 15
 
 # todo to environment
-MARGIN = 100
-MAX_RISK = 5/100
-MIN_PROFIT = 10/100
-WEIGHT_TP = [0.2, 0.6, 0.2]
+MARGIN = env("MARGIN", cast=int)
+MAX_RISK = env("MAX_RISK", cast=float)
+MIN_PROFIT = env("MIN_PROFIT", cast=float)
+WEIGHT_TP = env("WEIGHT_TP", cast=list)
+COOLDOWN_SECONDS = env("COOLDOWN_SECONDS", 5, cast=int)
 
 COIN_LIST = [
     {"id": "bitcoin", "symbol": "btc"},
