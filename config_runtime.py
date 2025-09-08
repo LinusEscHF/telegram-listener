@@ -18,7 +18,11 @@ HTTP_TIMEOUT     = 15
 MARGIN = env("MARGIN", cast=int)
 MAX_RISK = env("MAX_RISK", cast=float)
 MIN_PROFIT = env("MIN_PROFIT", cast=float)
-WEIGHT_TP = env("WEIGHT_TP", cast=list)
+WEIGHT_TP = [
+    env("TAKE_PROFIT1", 0.2, cast=float),
+    env("TAKE_PROFIT2", 0.6, cast=float),
+    env("TAKE_PROFIT3", 0.2, cast=float)
+]
 COOLDOWN_SECONDS = env("COOLDOWN_SECONDS", 5, cast=int)
 
 COIN_LIST = [
