@@ -117,25 +117,36 @@ def get_sentiment_votes(coin_id: str = "bitcoin", timeout: int = 15) -> dict:
 
 ### API FUNDING RATE (CG)
 
-def get_funding_rate(symbol: str = "BTC", product_type: str = "usdt-futures", timeout: int = 10) -> float:
+def get_funding_rate(symbol: str = "BTC", product_type: str = "usdt-futures", timeout: int = 10) -> float | None:
     """
     Fetch current funding rate (only the value) for a given symbol from Bitget API.
+    Returns None if fetching fails.
     """
     url = "https://api.bitget.com/api/v2/mix/market/current-fund-rate"
     params = {"symbol": f"{symbol.upper()}USDT", "productType": product_type}
 
-    resp = requests.get(url, params=params, timeout=timeout)
-    resp.raise_for_status()
-    payload = resp.json()
+    try:
+        resp = requests.get(url, params=params, timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
 
-    if payload.get("code") != "00000":
-        raise Exception(f"Bitget API error: {payload}")
+        if payload.get("code") != "00000":
+            logging.error(f"Bitget API error for funding rate ({symbol}): {payload}")
+            return None
 
-    data = payload.get("data", [])
-    if not data:
-        raise Exception("No data returned from Bitget")
+        data = payload.get("data", [])
+        if not data:
+            logging.warning(f"No funding rate data returned from Bitget for {symbol}")
+            return None
 
-    return float(data[0].get("fundingRate"))
+        return float(data[0].get("fundingRate"))
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to fetch funding rate for {symbol}: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"An unexpected error occurred in get_funding_rate for {symbol}: {e}")
+        return None
 
 
 ### API CANLDES (BG)
@@ -265,6 +276,43 @@ def get_overall_trend(trend_1h: str, trend_4h: str) -> str:
     else:
         return "MIXED"
     
+
+# Check if a symbol is available on Bitget futures market
+def is_symbol_on_bitget_futures(symbol: str, product_type: str = "usdt-futures", timeout: int = 10) -> bool:
+    """
+    Check if a symbol is available on the Bitget futures market.
+    """
+    url = "https://api.bitget.com/api/v2/mix/market/contracts"
+    params = {"productType": product_type}
+
+    try:
+        resp = requests.get(url, params=params, timeout=timeout)
+        resp.raise_for_status()
+        payload = resp.json()
+
+        if payload.get("code") != "00000":
+            logging.error(f"Bitget API error when fetching contracts: {payload}")
+            return 0
+
+        data = payload.get("data", [])
+        if not data:
+            logging.warning("No contract data returned from Bitget.")
+            return 0
+
+        # Check if the symbol exists in the list of contracts
+        target_symbol = f"{symbol.upper()}USDT"
+        is_available = any(contract.get("symbol") == target_symbol for contract in data)
+
+        return 1 if is_available else 0
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Failed to fetch Bitget contracts: {e}")
+        return 0
+    except Exception as e:
+        logging.error(f"An unexpected error occurred in is_symbol_on_bitget_futures: {e}")
+        return 0
+
+
 def signal_data(message: str):
 
     # SYMBOL AND COIN_ID
@@ -340,9 +388,13 @@ def signal_data(message: str):
     risk_condition = max_loss_pct <= c.MAX_RISK
     profit_condition = roi_total >= c.MIN_PROFIT
 
+    # Check if the symbol is available on Bitget futures market
+    is_available = is_symbol_on_bitget_futures(symbol)
+
     data = {
         "coin_id": coin_id,
         "symbol": symbol,
+        "available_on_bitget": is_available,
         "margin": c.MARGIN,
         "leverage": message_data['leverage'],
         "direction": message_data["direction"],
