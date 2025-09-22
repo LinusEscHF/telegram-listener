@@ -62,8 +62,27 @@ def run_telegram_client():
             sender = await event.get_sender()
             chat   = await event.get_chat()
 
+            logging.info(f"New message in {chat.title if hasattr(chat, 'title') else chat.id}  from {sender.id if sender else 'unknown'}: {event.raw_text}")
+
+            # Forward telegram message to Zapier
             try:
-                logging.info(f"New message in {chat.title if hasattr(chat, 'title') else chat.id}  from {sender.id if sender else 'unknown'}: {event.raw_text}")
+                requests.post(
+                    "https://hooks.zapier.com/hooks/catch/12655008/u1ba50b/",
+                    json={
+                        "chat_id": event.chat_id,
+                        "chat_name": getattr(chat, "title", None),
+                        "sender_id": sender.id if sender else None,
+                        "sender_name": getattr(sender, "first_name", None),
+                        "text": event.raw_text,
+                        "date": event.date.isoformat()
+                    },
+                    timeout=c.HTTP_TIMEOUT,
+                    headers=UA_HEADERS
+                )
+            except Exception:
+                logging.exception("Zapier webhook error")
+
+            try:
                 signal_data = u.signal_data(event.raw_text)
                 logging.info(f"Parsed signal data: {signal_data}")
 
